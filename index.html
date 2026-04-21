@@ -7,16 +7,13 @@
     <style>
         body { font-family: 'Pretendard', sans-serif; padding: 20px; background: #f4f7f9; color: #2c3e50; }
         h1 { text-align: center; color: #34495e; margin-bottom: 30px; font-size: 1.8rem; }
-        
         .dashboard-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; height: 650px; }
         .column { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e0e6ed; }
         .column-header { background: #2c3e50; color: white; padding: 15px; font-weight: bold; text-align: center; font-size: 1rem; }
         .list-container { flex: 1; overflow-y: auto; padding: 10px; background: #fff; }
-        
         .item { padding: 12px; margin-bottom: 8px; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 0.85rem; line-height: 1.4; }
         .item:hover { background: #ebf5fb; border-color: #3498db; transform: translateX(5px); }
         .item.active { background: #3498db; color: white; border-color: #2980b9; font-weight: bold; }
-
         .result-box { padding: 20px; border-radius: 10px; background: #f8f9fa; border: 1px solid #dee2e6; text-align: center; }
         .yield-label { font-size: 0.9rem; color: #7f8c8d; margin-bottom: 10px; }
         .yield-val { font-size: 2.2rem; font-weight: bold; color: #2980b9; margin: 15px 0; }
@@ -31,38 +28,21 @@
     <h1>[생산2팀 생산성 현황]</h1>
 
     <div class="dashboard-container">
-        <div class="column">
-            <div class="column-header">1. 제품 List</div>
-            <div id="productList" class="list-container"></div>
-        </div>
-        <div class="column">
-            <div class="column-header">2. 배치번호</div>
-            <div id="batchList" class="list-container"></div>
-        </div>
-        <div class="column">
-            <div class="column-header">3. 공정</div>
-            <div id="processList" class="list-container"></div>
-        </div>
-        <div class="column">
-            <div class="column-header">4. 수율</div>
-            <div id="yieldResult" class="list-container"></div>
-        </div>
+        <div class="column"><div class="column-header">1. 제품 List</div><div id="productList" class="list-container"></div></div>
+        <div class="column"><div class="column-header">2. 배치번호</div><div id="batchList" class="list-container"></div></div>
+        <div class="column"><div class="column-header">3. 공정</div><div id="processList" class="list-container"></div></div>
+        <div class="column"><div class="column-header">4. 수율</div><div id="yieldResult" class="list-container"></div></div>
     </div>
 
 <script>
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxJoIbArdj4_BDnV6wxNgLd3k55kbagI1rIdqqBBW5WMb63lHFh3K-UWoPpBwbUeRXjt9B5ieNXa05/pub?gid=240982560&single=true&output=csv';
-    
     let rawData = [];
     const PROC_ORDER = ["과립", "타정", "코팅", "선별", "인쇄"];
 
     function init() {
         Papa.parse(CSV_URL, {
-            download: true,
-            header: false,
-            complete: (results) => {
-                rawData = results.data.slice(1);
-                renderProducts();
-            }
+            download: true, header: false,
+            complete: (results) => { rawData = results.data.slice(1); renderProducts(); }
         });
     }
 
@@ -73,8 +53,7 @@
         container.innerHTML = "";
         Array.from(productSet).sort().forEach(prod => {
             const div = document.createElement('div');
-            div.className = 'item';
-            div.innerText = prod;
+            div.className = 'item'; div.innerText = prod;
             div.onclick = () => selectProduct(prod, div);
             container.appendChild(div);
         });
@@ -83,19 +62,12 @@
     function selectProduct(prodName, element) {
         setActive('productList', element);
         const batchSet = new Set();
-        rawData.forEach(row => {
-            if(row[2] === prodName && row[4]) batchSet.add(row[4]);
-        });
-
+        rawData.forEach(row => { if(row[2] === prodName && row[4]) batchSet.add(row[4]); });
         const container = document.getElementById('batchList');
-        container.innerHTML = "";
-        document.getElementById('processList').innerHTML = "";
-        document.getElementById('yieldResult').innerHTML = "";
-
+        container.innerHTML = ""; document.getElementById('processList').innerHTML = ""; document.getElementById('yieldResult').innerHTML = "";
         Array.from(batchSet).sort().forEach(batch => {
             const div = document.createElement('div');
-            div.className = 'item';
-            div.innerText = batch;
+            div.className = 'item'; div.innerText = batch;
             div.onclick = () => selectBatch(prodName, batch, div);
             container.appendChild(div);
         });
@@ -108,31 +80,17 @@
             if(row[4] === batchId && row[5]) { 
                 const proc = PROC_ORDER.find(p => row[5].includes(p));
                 if(proc) {
-                    // 레바핀100밀리그람이 아니면 인쇄 공정 제외
-                    if(proc === "인쇄" && !prodName.includes("레바핀100밀리그람")) return;
-                    
-                    processes.push({ 
-                        name: proc, 
-                        weight: parseFloat(row[6]), 
-                        detail: row[5],
-                        status: row[10] 
-                    });
+                    if(proc === "인쇄" && !prodName.includes("레바핀")) return; // 레바핀 아니면 인쇄 숨김
+                    processes.push({ name: proc, weight: parseFloat(row[6]), detail: row[5], status: row[10] });
                 }
             }
         });
-
         const container = document.getElementById('processList');
-        container.innerHTML = "";
-        document.getElementById('yieldResult').innerHTML = "";
-
-        // 중복 제거 및 과립 공정은 리스트에 보이되 수율 계산 타겟에서 식별되도록 함
-        const uniqueProcs = [...new Map(processes.map(item => [item.name, item])).values()]
-                            .sort((a, b) => PROC_ORDER.indexOf(a.name) - PROC_ORDER.indexOf(b.name));
-
+        container.innerHTML = ""; document.getElementById('yieldResult').innerHTML = "";
+        const uniqueProcs = [...new Map(processes.map(item => [item.name, item])).values()].sort((a, b) => PROC_ORDER.indexOf(a.name) - PROC_ORDER.indexOf(b.name));
         uniqueProcs.forEach(p => {
             const div = document.createElement('div');
-            div.className = 'item';
-            div.innerText = p.name;
+            div.className = 'item'; div.innerText = p.name;
             div.onclick = () => calculateYield(batchId, p.name, div);
             container.appendChild(div);
         });
@@ -142,52 +100,41 @@
         setActive('processList', element);
         const container = document.getElementById('yieldResult');
         container.innerHTML = "";
+        if(selectedProc === "과립") { container.innerHTML = `<div style="padding:20px; color:#888; text-align:center;">과립 공정은 수율 계산에서 제외됩니다.</div>`; return; }
 
-        // 과립 공정은 수율 계산 제외
-        if(selectedProc === "과립") {
-            container.innerHTML = `<div style="padding:20px; color:#888; text-align:center;">과립 공정은 수율 계산에서 제외됩니다.</div>`;
-            return;
-        }
-
-        const currentBatchRows = rawData.filter(row => row[4] === batchId);
-        
-        // 1. 모든 공정 데이터 정리
-        const steps = currentBatchRows.map(row => ({
+        const steps = rawData.filter(row => row[4] === batchId).map(row => ({
             proc: PROC_ORDER.find(p => row[5].includes(p)),
-            detail: row[5],
-            weight: parseFloat(row[6]),
-            status: (row[10] || "").toUpperCase()
+            detail: row[5], weight: parseFloat(row[6]), status: (row[10] || "").toUpperCase()
         })).filter(s => s.proc && !isNaN(s.weight));
 
-        // 2. 기준점인 '과립-Blender' 무게 찾기
-        const blenderStep = steps.find(s => s.detail.includes("과립-Blender"));
-        
-        // 3. 선택된 공정의 데이터 찾기
-        const targetStep = steps.find(s => s.proc === selectedProc);
+        let theoryStep, actualStep = steps.find(s => s.proc === selectedProc);
 
-        if(targetStep && blenderStep) {
-            // 타정 공정일 경우 Blender 대비 수율 계산, 그 외는 직전 단계 대비(필요 시 blender 고정 가능)
-            // 요청 사항에 따라 타정 및 이후 공정의 이론량 기준을 Blender로 설정
-            const theoryWeight = blenderStep.weight;
-            const actualWeight = targetStep.weight;
-            const yieldVal = ((actualWeight / theoryWeight) * 100).toFixed(1);
-            const isPCNF = targetStep.status.includes("PCNF");
+        if (selectedProc === "타정") {
+            theoryStep = steps.find(s => s.detail.includes("과립-Blender"));
+        } else if (selectedProc === "코팅") {
+            theoryStep = steps.find(s => s.proc === "타정");
+        } else if (selectedProc === "선별") {
+            theoryStep = steps.find(s => s.proc === "코팅") || steps.find(s => s.proc === "타정");
+        } else if (selectedProc === "인쇄") {
+            theoryStep = steps.find(s => s.proc === "선별");
+        }
 
+        if(actualStep && theoryStep) {
+            const yieldVal = ((actualStep.weight / theoryStep.weight) * 100).toFixed(1);
             container.innerHTML = `
                 <div class="result-box">
-                    <div class="yield-label">${selectedProc} 공정 수율 (Blender 기준)</div>
+                    <div class="yield-label">${selectedProc} 수율 분석</div>
                     <div class="weight-info">
-                        • 이론량(과립-Blender): <b>${theoryWeight.toLocaleString()} Kg</b><br>
-                        • 실생산량(${selectedProc}): <b>${actualWeight.toLocaleString()} Kg</b>
+                        • 이론량(${theoryStep.proc || theoryStep.detail}): <b>${theoryStep.weight.toLocaleString()} Kg</b><br>
+                        • 실생산량(${selectedProc}): <b>${actualStep.weight.toLocaleString()} Kg</b>
                     </div>
                     <div class="yield-val">${yieldVal}%</div>
-                    <span class="status-badge ${isPCNF ? 'status-alert' : 'status-normal'}">
-                        ${isPCNF ? '⚠️ PCNF 발생' : '✅ 정상(CNF)'}
+                    <span class="status-badge ${actualStep.status.includes("PCNF") ? 'status-alert' : 'status-normal'}">
+                        ${actualStep.status.includes("PCNF") ? '⚠️ PCNF 발생' : '✅ 정상(CNF)'}
                     </span>
-                </div>
-            `;
-        } else if (!blenderStep) {
-            container.innerHTML = `<div style="padding:20px; color:#e74c3c; text-align:center;">이론량 기준인 '과립-Blender' 데이터가 없습니다.</div>`;
+                </div>`;
+        } else {
+            container.innerHTML = `<div style="padding:20px; color:#e74c3c; text-align:center;">상위 공정(${selectedProc === "타정" ? "과립-Blender" : "직전 공정"}) 데이터를 찾을 수 없습니다.</div>`;
         }
     }
 
@@ -195,7 +142,6 @@
         document.querySelectorAll(`#${containerId} .item`).forEach(i => i.classList.remove('active'));
         element.classList.add('active');
     }
-
     init();
 </script>
 </body>
