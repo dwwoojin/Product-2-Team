@@ -2,47 +2,63 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>[생산2팀 생산성 및 장비 가동 현황]</title>
+    <title>[생산2팀 생산성 현황]</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        body { font-family: 'Pretendard', -apple-system, sans-serif; padding: 20px; background: #f4f7f9; }
-        .status-header { display: flex; gap: 15px; margin-bottom: 20px; }
-        .box { flex: 1; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .normal { background: #2ecc71; color: white; }
-        .alert { background: #e74c3c; color: white; }
-        .card { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-        th, td { padding: 10px; text-align: center; border: 1px solid #eee; }
-        th { background: #f8f9fa; }
-        .yield-up { color: #2980b9; font-weight: bold; }
+        body { font-family: 'Pretendard', sans-serif; padding: 20px; background: #f0f2f5; color: #1c1e21; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .status-container { display: flex; gap: 15px; margin-bottom: 25px; }
+        .box { flex: 1; padding: 20px; border-radius: 12px; text-align: center; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.08); background: white; }
+        .normal { border-top: 5px solid #2ecc71; color: #27ae60; }
+        .alert { border-top: 5px solid #e74c3c; color: #c0392b; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0); } 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); } }
+        
+        .card { background: white; padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h2 { font-size: 1.2rem; margin-top: 0; color: #444; border-left: 5px solid #3498db; padding-left: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: center; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; color: #666; font-weight: 600; }
+        .yield-val { font-weight: bold; color: #2980b9; font-size: 1.1rem; }
+        .pcnf-list { text-align: left !important; color: #e74c3c; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
-    <h1>[생산2팀 생산성 현황]</h1>
-    <div id="debug-log" style="color:red; font-weight:bold; margin-bottom:10px;"></div>
+    <div class="header">
+        <h1>[생산2팀 생산성 현황]</h1>
+        <div id="last-update" style="font-size: 0.9rem; color: #888;"></div>
+    </div>
 
-    <div class="status-header">
-        <div id="sys-status" class="box normal">시스템 상태: 확인 중...</div>
-        <div id="data-count" class="box" style="background:#fff;">읽어온 데이터: 0건</div>
+    <div class="status-container">
+        <div id="sys-status" class="box normal">시스템 상태: 데이터 분석 중...</div>
+        <div id="pcnf-summary" class="box" style="color:#333;">PCNF 발생 건수: 0건</div>
+    </div>
+
+    <div id="pcnf-card" class="card" style="display:none; border: 2px solid #e74c3c;">
+        <h2 style="border-left-color: #e74c3c; color: #e74c3c;">⚠️ PCNF 이상 탐지 내역 (자재 및 배치)</h2>
+        <table id="pcnfTable">
+            <thead>
+                <tr>
+                    <th>오더번호</th>
+                    <th>제품명(배치)</th>
+                    <th>이상 자재 내역</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
 
     <div class="card">
-        <h3>공정별 장비 가동률</h3>
-        <canvas id="machineChart" style="max-height: 250px;"></canvas>
-    </div>
-
-    <div class="card">
-        <h3>오더별 단계 수율 (확정수율 기준)</h3>
+        <h2>공정별 생산 수율 (H열: 이론량 vs 실생산량)</h2>
         <table id="yieldTable">
             <thead>
                 <tr>
                     <th>제품명</th>
                     <th>오더번호</th>
-                    <th>공정 단계</th>
-                    <th>수율 (%)</th>
-                    <th>상태</th>
+                    <th>이론량 (H상)</th>
+                    <th>실생산량 (H하)</th>
+                    <th>공정 수율 (%)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -51,100 +67,106 @@
 
 <script>
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxJoIbArdj4_BDnV6wxNgLd3k55kbagI1rIdqqBBW5WMb63lHFh3K-UWoPpBwbUeRXjt9B5ieNXa05/pub?gid=240982560&single=true&output=csv';
-    
-    const MACHINE_LIST = {
-        "과립": ["OP600", "OP300", "OP75", "FBD600", "Blender", "HSM200", "HSM30"],
-        "타정": ["KIK1", "KIK2", "KIK3", "KIK4", "KORSCH"],
-        "코팅": ["금성80", "금성130", "금성-170", "금성170", "세종-130"],
-        "선별": ["자동", "수동"],
-        "인쇄": ["정제인쇄기"]
-    };
-    const PROC_ORDER = ["과립", "타정", "코팅", "선별", "인쇄"];
 
     function init() {
         Papa.parse(CSV_URL, {
             download: true,
-            header: true,
-            skipEmptyLines: true,
+            header: false, // H열 위치를 직접 잡기 위해 false로 시작
             complete: (results) => {
-                document.getElementById('data-count').innerText = `읽어온 데이터: ${results.data.length}건`;
-                if(results.data.length > 0) processData(results.data);
-                else document.getElementById('debug-log').innerText = "데이터가 비어있습니다. 구글 시트 게시를 확인하세요.";
+                processData(results.data);
+                document.getElementById('last-update').innerText = "최종 업데이트: " + new Date().toLocaleString();
             }
         });
     }
 
-    function processData(data) {
-        const mStats = { "과립": 0, "타정": 0, "코팅": 0, "선별": 0, "인쇄": 0 };
-        const orders = {};
-        let pcnfCnt = 0;
-
-        // 열 이름 찾기 (I열 등 특정 위치가 아닌 키워드 기반)
-        const keys = Object.keys(data[0]);
-        const col = {
-            order: keys.find(k => k.includes("오더")),
-            product: keys.find(k => k.includes("제품")),
-            proc: keys.find(k => k.includes("공정")),
-            weight: keys.find(k => k.includes("확정수율") || k.includes("확정 수율")), // I열
-            task: keys.find(k => k.includes("작업내역") || k.includes("내역")),
-            status: keys.find(k => k.includes("상태") || k.includes("시스템"))
-        };
+    function processData(rawData) {
+        const data = rawData.slice(1); // 헤더 제외
+        const orderGroups = {};
+        const pcnfList = [];
 
         data.forEach(row => {
-            // 장비 분류
-            const task = row[col.task] || "";
-            for(let cat in MACHINE_LIST) {
-                if(MACHINE_LIST[cat].some(m => task.includes(m))) mStats[cat]++;
+            const orderId = row[1]; // B열: 오더번호 가정
+            const productName = row[2]; // C열: 제품명 가정
+            const hVal = parseFloat(row[7]); // H열 (8번째 열, 인덱스 7)
+            const status = (row[10] || "").toUpperCase(); // K열 부근 시스템상태 가정
+            const materialInfo = row[5]; // F열 부근 자재내역 가정
+            const batchInfo = row[3]; // D열 부근 배치/제조번호 가정
+
+            if(!orderId) return;
+
+            // 1. PCNF 수집
+            if(status.includes("PCNF")) {
+                pcnfList.push({
+                    order: orderId,
+                    item: `${productName} (${batchInfo})`,
+                    material: materialInfo || "자재 정보 없음"
+                });
             }
 
-            // PCNF 체크
-            const st = (row[col.status] || "").toUpperCase();
-            if(st.includes("PCNF")) pcnfCnt++;
-
-            // 수율 그룹화
-            const oid = row[col.order];
-            if(!oid) return;
-            if(!orders[oid]) orders[oid] = { name: row[col.product], steps: [], pcnf: false };
-            if(st.includes("PCNF")) orders[oid].pcnf = true;
-
-            const w = parseFloat(row[col.weight]);
-            if(!isNaN(w)) orders[oid].steps.push({ proc: row[col.proc], w: w });
+            // 2. 오더번호별 H열 데이터 수집 (상: 이론량, 하: 실생산량)
+            if(!orderGroups[orderId]) {
+                orderGroups[orderId] = { name: productName, hValues: [] };
+            }
+            if(!isNaN(hVal)) {
+                orderGroups[orderId].hValues.push(hVal);
+            }
         });
 
-        updateUI(pcnfCnt, mStats, orders);
+        updateUI(pcnfList, orderGroups);
     }
 
-    function updateUI(pcnf, mStats, orders) {
-        const s = document.getElementById('sys-status');
-        if(pcnf > 0) { s.innerText = "시스템 상태: PCNF 탐지!"; s.className = "box alert"; }
-        else { s.innerText = "시스템 상태: 정상 (CNF)"; s.className = "box normal"; }
+    function updateUI(pcnfs, orders) {
+        // 시스템 상태 업데이트
+        const statusBox = document.getElementById('sys-status');
+        const summaryBox = document.getElementById('pcnf-summary');
+        const pcnfCard = document.getElementById('pcnf-card');
+        const pcnfTbody = document.querySelector("#pcnfTable tbody");
 
-        // 차트
-        new Chart(document.getElementById('machineChart'), {
-            type: 'bar',
-            data: {
-                labels: Object.keys(mStats),
-                datasets: [{ label: '가동 횟수', data: Object.values(mStats), backgroundColor: '#3498db' }]
-            },
-            options: { indexAxis: 'y' }
-        });
+        if(pcnfs.length > 0) {
+            statusBox.innerText = "시스템 상태: PCNF 이상 탐지";
+            statusBox.className = "box alert";
+            summaryBox.innerText = `PCNF 발생 건수: ${pcnfs.length}건`;
+            summaryBox.style.color = "#e74c3c";
+            
+            pcnfCard.style.display = "block";
+            pcnfTbody.innerHTML = pcnfs.map(p => `
+                <tr>
+                    <td>${p.order}</td>
+                    <td>${p.item}</td>
+                    <td class="pcnf-list">${p.material}</td>
+                </tr>
+            `).join('');
+        } else {
+            statusBox.innerText = "시스템 상태: 정상 (CNF)";
+            statusBox.className = "box normal";
+            summaryBox.innerText = "PCNF 발생 건수: 0건";
+            pcnfCard.style.display = "none";
+        }
 
-        // 테이블
-        const tbody = document.querySelector("#yieldTable tbody");
+        // 수율 테이블 업데이트
+        const yieldTbody = document.querySelector("#yieldTable tbody");
+        yieldTbody.innerHTML = "";
+
         for(let id in orders) {
             const g = orders[id];
-            g.steps.sort((a, b) => PROC_ORDER.indexOf(a.proc) - PROC_ORDER.indexOf(b.proc));
-            
-            if(g.steps.length >= 2) {
-                for(let i=1; i<g.steps.length; i++) {
-                    const up = g.steps[i-1];
-                    const lo = g.steps[i];
-                    const y = ((lo.w / up.w) * 100).toFixed(2);
-                    tbody.innerHTML += `<tr><td>${g.name}</td><td>${id}</td><td>${up.proc}→${lo.proc}</td><td class="yield-up">${y}%</td><td>${g.pcnf?'빨간불':'정상'}</td></tr>`;
-                }
+            if(g.hValues.length >= 2) {
+                const theory = g.hValues[0]; // H열 위쪽 (이론량)
+                const actual = g.hValues[g.hValues.length - 1]; // H열 아래쪽 (실생산량)
+                const yieldPct = ((actual / theory) * 100).toFixed(1); // 소수점 첫째자리 반올림
+
+                yieldTbody.innerHTML += `
+                    <tr>
+                        <td>${g.name}</td>
+                        <td>${id}</td>
+                        <td>${theory.toLocaleString()}</td>
+                        <td>${actual.toLocaleString()}</td>
+                        <td class="yield-val">${yieldPct}%</td>
+                    </tr>
+                `;
             }
         }
     }
+
     init();
 </script>
 </body>
