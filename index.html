@@ -8,17 +8,21 @@
     <style>
         body { font-family: 'Pretendard', sans-serif; padding: 20px; background: #f4f7f9; color: #2c3e50; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .status-container { display: flex; gap: 15px; margin-bottom: 25px; }
-        .box { flex: 1; padding: 20px; border-radius: 12px; text-align: center; font-weight: bold; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .status-container { display: flex; gap: 15px; margin-bottom: 20px; }
+        .box { flex: 1; padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .alert-active { border: 2px solid #e74c3c; color: #e74c3c; background: #fff5f5; animation: blink 2s infinite; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
         h2 { font-size: 1.1rem; border-left: 5px solid #3498db; padding-left: 12px; margin-bottom: 15px; }
+        
+        /* 필터 스타일 */
+        .filter-container { display: flex; gap: 10px; margin-bottom: 15px; background: #ebf2f7; padding: 15px; border-radius: 8px; }
+        .filter-input { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; flex: 1; font-size: 14px; }
+
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: center; }
-        th { background: #f8f9fa; color: #7f8c8d; }
-        .pcnf-row { color: #e74c3c; font-weight: bold; }
+        th { background: #f8f9fa; color: #7f8c8d; position: sticky; top: 0; }
         .yield-badge { font-weight: bold; color: #2980b9; background: #eef7ff; padding: 5px 10px; border-radius: 6px; }
     </style>
 </head>
@@ -35,13 +39,13 @@
     </div>
 
     <div id="pcnf-card" class="card" style="display:none;">
-        <h2 style="color: #e74c3c; border-left-color: #e74c3c;">⚠️ PCNF 이상 탐지 내역</h2>
+        <h2 style="color: #e74c3c; border-left-color: #e74c3c;">⚠️ PCNF 이상 탐지 내역 (배치/제품)</h2>
         <table id="pcnfTable">
             <thead>
                 <tr>
                     <th>배치번호</th>
-                    <th>자재내역 (D열)</th>
-                    <th>작업내역 (공정)</th>
+                    <th>제품명</th>
+                    <th>작업내역(공정)</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -49,12 +53,18 @@
     </div>
 
     <div class="card">
-        <h2>배치별 공정 수율 (H열 상/하 기준)</h2>
+        <h2>공정 수율 분석 및 필터</h2>
+        
+        <div class="filter-container">
+            <input type="text" id="filterProduct" class="filter-input" placeholder="제품명으로 검색..." onkeyup="filterTable()">
+            <input type="text" id="filterBatch" class="filter-input" placeholder="배치번호로 검색..." onkeyup="filterTable()">
+        </div>
+
         <table id="yieldTable">
             <thead>
                 <tr>
-                    <th>자재명 (D열)</th>
-                    <th>배치번호</th>
+                    <th>제품명 (D열)</th>
+                    <th>배치번호 (E열)</th>
                     <th>공정 분류</th>
                     <th>이론량</th>
                     <th>실생산량</th>
@@ -99,31 +109,28 @@
         const pcnfs = [];
 
         data.forEach(row => {
-            const batchId = row[2]; // 제조번호/배치 (C열 부근 가정)
-            const materialD = row[3]; // D열 자재내역
-            const hVal = parseFloat(row[7]); // H열 수치
-            const taskDetail = row[5] || ""; // F열 작업내역
-            const status = (row[10] || "").toUpperCase(); // K열 상태
+            const materialD = row[3] || "미분류"; // D열: 제품명
+            const batchE = row[4] || "No Data";   // E열: 배치번호
+            const hVal = parseFloat(row[7]);     // H열: 이론/생산량
+            const taskDetail = row[5] || "";     // F열: 작업내역
+            const status = (row[10] || "").toUpperCase(); // K열 부근: 상태
 
-            if (!batchId) return;
+            if (!batchE) return;
 
-            // 1. PCNF 수집
             if (status.includes("PCNF")) {
-                pcnfs.push({ id: batchId, mat: materialD, task: taskDetail });
+                pcnfs.push({ id: batchE, mat: materialD, task: taskDetail });
             }
 
-            // 2. 배치별 그룹화
-            if (!batchGroups[batchId]) {
-                batchGroups[batchId] = { mat: materialD, cat: getCategory(taskDetail), hVals: [] };
+            if (!batchGroups[batchE]) {
+                batchGroups[batchE] = { mat: materialD, cat: getCategory(taskDetail), hVals: [] };
             }
-            if (!isNaN(hVal)) batchGroups[batchId].hVals.push(hVal);
+            if (!isNaN(hVal)) batchGroups[batchE].hVals.push(hVal);
         });
 
         renderUI(pcnfs, batchGroups);
     }
 
     function renderUI(pcnfs, batches) {
-        // 시스템 상태 업데이트
         const sysBox = document.getElementById('sys-status');
         const sumBox = document.getElementById('pcnf-summary');
         const pcnfCard = document.getElementById('pcnf-card');
@@ -137,15 +144,14 @@
             pcnfTbody.innerHTML = pcnfs.map(p => `<tr><td>${p.id}</td><td>${p.mat}</td><td>${p.task}</td></tr>`).join('');
         }
 
-        // 수율 테이블 업데이트
         const yieldTbody = document.querySelector("#yieldTable tbody");
         yieldTbody.innerHTML = "";
 
         for (let id in batches) {
             const b = batches[id];
             if (b.hVals.length >= 2) {
-                const theory = b.hVals[0]; // 상단 이론량
-                const actual = b.hVals[b.hVals.length - 1]; // 하단 실생산량
+                const theory = b.hVals[0];
+                const actual = b.hVals[b.hVals.length - 1];
                 const yieldPct = ((actual / theory) * 100).toFixed(1);
 
                 yieldTbody.innerHTML += `
@@ -156,11 +162,33 @@
                         <td>${theory.toLocaleString()}</td>
                         <td>${actual.toLocaleString()}</td>
                         <td><span class="yield-badge">${yieldPct}%</span></td>
-                    </tr>
-                `;
+                    </tr>`;
             }
         }
     }
+
+    // 테이블 필터 함수
+    function filterTable() {
+        const prodInput = document.getElementById("filterProduct").value.toUpperCase();
+        const batchInput = document.getElementById("filterBatch").value.toUpperCase();
+        const table = document.getElementById("yieldTable");
+        const tr = table.getElementsByTagName("tr");
+
+        for (let i = 1; i < tr.length; i++) {
+            const tdProd = tr[i].getElementsByTagName("td")[0];
+            const tdBatch = tr[i].getElementsByTagName("td")[1];
+            if (tdProd && tdBatch) {
+                const txtProd = tdProd.textContent || tdProd.innerText;
+                const txtBatch = tdBatch.textContent || tdBatch.innerText;
+                if (txtProd.toUpperCase().indexOf(prodInput) > -1 && txtBatch.toUpperCase().indexOf(batchInput) > -1) {
+                    tr[i].style.display = "";
+                } else {
+                    tr[i].style.display = "none";
+                }
+            }
+        }
+    }
+
     init();
 </script>
 </body>
