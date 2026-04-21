@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>[생산2팀 생산성 현황 및 시스템 상태]</title>
+    <title>[생산2팀 생산성 및 장비별 가동 현황]</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -13,49 +13,58 @@
         .status-alert { background-color: #e74c3c; color: white; animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
         
+        .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 12px; text-align: center; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
+        th, td { padding: 10px; text-align: center; border: 1px solid #ddd; }
         th { background-color: #f8f9fa; }
         .highlight { color: #2980b9; font-weight: bold; }
+        .category-title { font-size: 1.1em; font-weight: bold; color: #2c3e50; border-left: 4px solid #3498db; padding-left: 10px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
-    <h1>[생산2팀 생산성 및 시스템 상태]</h1>
+    <h1>[생산2팀 생산성 및 장비 가동 현황]</h1>
 
     <div class="status-container">
-        <div id="system-status" class="status-card status-normal">
-            데이터 분석 중...
-        </div>
-        <div id="pcnf-count" class="status-card" style="background-color: #fff; color: #333;">
-            PCNF 탐지: 0건
-        </div>
+        <div id="system-status" class="status-card status-normal">분석 중...</div>
+        <div id="pcnf-count" class="status-card" style="background-color: #fff; color: #333;">PCNF 탐지: 0건</div>
     </div>
 
-    <div class="card">
-        <h2>장비별 가동 점유율</h2>
-        <canvas id="machineChart" style="max-height: 250px;"></canvas>
-    </div>
+    <div class="card-grid">
+        <div class="card">
+            <div class="category-title">공정별 장비 가동 현황</div>
+            <canvas id="machineChart" style="max-height: 400px;"></canvas>
+        </div>
 
-    <div class="card">
-        <h2>공정 수율 현황 (오더번호 기준)</h2>
-        <table id="yieldTable">
-            <thead>
-                <tr>
-                    <th>제품명</th>
-                    <th>오더번호</th>
-                    <th>최종 공정</th>
-                    <th>최종 수율</th>
-                    <th>상태</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="card">
+            <div class="category-title">오더번호별 공정 수율</div>
+            <table id="yieldTable">
+                <thead>
+                    <tr>
+                        <th>제품명</th>
+                        <th>오더번호</th>
+                        <th>최종수율</th>
+                        <th>상태</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 
 <script>
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxJoIbArdj4_BDnV6wxNgLd3k55kbagI1rIdqqBBW5WMb63lHFh3K-UWoPpBwbUeRXjt9B5ieNXa05/pub?gid=240982560&single=true&output=csv';
+    
+    // 장비 분류 사전
+    const MACHINE_DIC = {
+        "과립": ["OP600", "OP300", "OP75", "FBD600", "Blender", "HSM200", "HSM30"],
+        "타정": ["KIK1", "KIK2", "KIK3", "KIK4", "KORSCH"],
+        "코팅": ["금성80", "금성130", "금성-170-1", "금성-170-2", "세종-130"],
+        "선별": ["자동", "수동"],
+        "인쇄": ["정제인쇄기"]
+    };
+
     const PROCESS_ORDER = ["과립", "타정", "코팅", "선별", "인쇄"];
 
     function init() {
@@ -68,7 +77,7 @@
     }
 
     function processData(data) {
-        const machineCounts = {};
+        const machineStats = { "과립": 0, "타정": 0, "코팅": 0, "선별": 0, "인쇄": 0 };
         const orderGroups = {};
         let pcnfTotal = 0;
 
@@ -83,15 +92,80 @@
         };
 
         data.forEach(row => {
-            // 1. 장비 추출
-            const mMatch = (row[col.task] || "").match(/([가-힣\w]+(기|라인|장비|호기))/);
-            if(mMatch) machineCounts[mMatch[0]] = (machineCounts[mMatch[0]] || 0) + 1;
+            // 1. 장비 분류 및 카운트
+            const taskDetail = row[col.task] || "";
+            for(let cat in MACHINE_DIC) {
+                MACHINE_DIC[cat].forEach(mName => {
+                    if(taskDetail.includes(mName)) {
+                        machineStats[cat]++;
+                    }
+                });
+            }
 
-            // 2. PCNF 판별 (시스템 상태 체크)
+            // 2. PCNF 체크
             const statusValue = (row[col.status] || "").toUpperCase();
             if(statusValue.includes("PCNF")) pcnfTotal++;
 
             // 3. 오더별 그룹화
             const orderId = row[col.order];
             if(!orderId) return;
-            if(!orderGroups[orderId]) orderGroups[orderId] = { name: row[col.product], steps: [], has
+            if(!orderGroups[orderId]) orderGroups[orderId] = { name: row[col.product], steps: [], hasPCNF: false };
+            if(statusValue.includes("PCNF")) orderGroups[orderId].hasPCNF = true;
+
+            const weight = parseFloat(row[col.weight]);
+            if(!isNaN(weight)) orderGroups[orderId].steps.push({ process: row[col.process], weight: weight });
+        });
+
+        updateStatusUI(pcnfTotal);
+        renderChart(machineStats);
+        renderTable(orderGroups);
+    }
+
+    function updateStatusUI(count) {
+        const sEl = document.getElementById('system-status');
+        const cEl = document.getElementById('pcnf-count');
+        if(count > 0) {
+            sEl.innerText = "시스템 이상 (PCNF 탐지)";
+            sEl.className = "status-card status-alert";
+        } else {
+            sEl.innerText = "시스템 정상 (CNF)";
+            sEl.className = "status-card status-normal";
+        }
+        cEl.innerText = `PCNF 탐지: ${count}건`;
+    }
+
+    function renderChart(stats) {
+        const ctx = document.getElementById('machineChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(stats),
+                datasets: [{
+                    label: '공정별 가동 횟수',
+                    data: Object.values(stats),
+                    backgroundColor: ['#3498db', '#e67e22', '#2ecc71', '#f1c40f', '#9b59b6']
+                }]
+            },
+            options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+        });
+    }
+
+    function renderTable(oGroups) {
+        const tbody = document.querySelector("#yieldTable tbody");
+        for(let id in oGroups) {
+            const g = oGroups[id];
+            g.steps.sort((a, b) => PROCESS_ORDER.indexOf(a.process) - PROCESS_ORDER.indexOf(b.process));
+            if(g.steps.length >= 2) {
+                const first = g.steps[0];
+                const last = g.steps[g.steps.length - 1];
+                const yieldVal = ((last.weight / first.weight) * 100).toFixed(2);
+                const statusStr = g.hasPCNF ? `<span style="color:red">PCNF</span>` : `정상`;
+                tbody.innerHTML += `<tr><td>${g.name}</td><td>${id}</td><td class="highlight">${yieldVal}%</td><td>${statusStr}</td></tr>`;
+            }
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>
