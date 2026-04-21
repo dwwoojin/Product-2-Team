@@ -20,7 +20,7 @@
         .result-box { padding: 20px; border-radius: 10px; background: #f8f9fa; border: 1px solid #dee2e6; text-align: center; }
         .yield-label { font-size: 0.9rem; color: #7f8c8d; margin-bottom: 10px; }
         .yield-val { font-size: 2.2rem; font-weight: bold; color: #2980b9; margin: 15px 0; }
-        .weight-info { font-size: 0.9rem; color: #34495e; margin-bottom: 15px; background: #fff; padding: 10px; border-radius: 5px; line-height: 1.6; }
+        .weight-info { font-size: 0.85rem; color: #34495e; margin-bottom: 15px; background: #fff; padding: 10px; border-radius: 5px; line-height: 1.6; text-align: left; }
         .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; }
         .status-normal { background: #2ecc71; color: white; }
         .status-alert { background: #e74c3c; color: white; }
@@ -35,17 +35,14 @@
             <div class="column-header">1. 제품 List</div>
             <div id="productList" class="list-container"></div>
         </div>
-
         <div class="column">
             <div class="column-header">2. 배치번호</div>
             <div id="batchList" class="list-container"></div>
         </div>
-
         <div class="column">
             <div class="column-header">3. 공정</div>
             <div id="processList" class="list-container"></div>
         </div>
-
         <div class="column">
             <div class="column-header">4. 수율</div>
             <div id="yieldResult" class="list-container"></div>
@@ -69,11 +66,9 @@
         });
     }
 
-    // 1단계: C열 (인덱스 2) 제품 리스트
     function renderProducts() {
         const productSet = new Set();
         rawData.forEach(row => { if(row[2]) productSet.add(row[2]); });
-        
         const container = document.getElementById('productList');
         container.innerHTML = "";
         Array.from(productSet).sort().forEach(prod => {
@@ -85,12 +80,10 @@
         });
     }
 
-    // 2단계: 제품 선택 -> E열 (인덱스 4) 배치번호 리스트 추출
     function selectProduct(prodName, element) {
         setActive('productList', element);
         const batchSet = new Set();
         rawData.forEach(row => {
-            // C열 제품명과 일치하는 행의 E열(인덱스 4) 데이터 수집
             if(row[2] === prodName && row[4]) batchSet.add(row[4]);
         });
 
@@ -103,21 +96,28 @@
             const div = document.createElement('div');
             div.className = 'item';
             div.innerText = batch;
-            div.onclick = () => selectBatch(batch, div);
+            div.onclick = () => selectBatch(prodName, batch, div);
             container.appendChild(div);
         });
     }
 
-    // 3단계: 배치번호 선택 -> F열 (인덱스 5) 작업내역 기반 공정 리스트
-    function selectBatch(batchId, element) {
+    function selectBatch(prodName, batchId, element) {
         setActive('batchList', element);
         const processes = [];
         rawData.forEach(row => {
-            // E열 배치번호와 일치하는 행 탐색
             if(row[4] === batchId && row[5]) { 
                 const proc = PROC_ORDER.find(p => row[5].includes(p));
-                // G열(인덱스 6) 무게 데이터 사용
-                if(proc) processes.push({ name: proc, weight: parseFloat(row[6]), status: row[10] });
+                if(proc) {
+                    // 레바핀100밀리그람이 아니면 인쇄 공정 제외
+                    if(proc === "인쇄" && !prodName.includes("레바핀100밀리그람")) return;
+                    
+                    processes.push({ 
+                        name: proc, 
+                        weight: parseFloat(row[6]), 
+                        detail: row[5],
+                        status: row[10] 
+                    });
+                }
             }
         });
 
@@ -125,6 +125,7 @@
         container.innerHTML = "";
         document.getElementById('yieldResult').innerHTML = "";
 
+        // 중복 제거 및 과립 공정은 리스트에 보이되 수율 계산 타겟에서 식별되도록 함
         const uniqueProcs = [...new Map(processes.map(item => [item.name, item])).values()]
                             .sort((a, b) => PROC_ORDER.indexOf(a.name) - PROC_ORDER.indexOf(b.name));
 
@@ -137,34 +138,47 @@
         });
     }
 
-    // 4단계: 공정 선택 -> G열 무게 데이터로 수율 계산
     function calculateYield(batchId, selectedProc, element) {
         setActive('processList', element);
-        
-        const currentBatchRows = rawData.filter(row => row[4] === batchId);
-        const steps = currentBatchRows.map(row => ({
-            proc: PROC_ORDER.find(p => row[5].includes(p)),
-            weight: parseFloat(row[6]), // G열 (인덱스 6)
-            status: (row[10] || "").toUpperCase()
-        })).filter(s => s.proc && !isNaN(s.weight))
-           .sort((a, b) => PROC_ORDER.indexOf(a.proc) - PROC_ORDER.indexOf(b.proc));
-
-        const targetIdx = steps.findIndex(s => s.proc === selectedProc);
         const container = document.getElementById('yieldResult');
         container.innerHTML = "";
 
-        if(targetIdx > 0) {
-            const upper = steps[targetIdx - 1];
-            const lower = steps[targetIdx];
-            const yieldVal = ((lower.weight / upper.weight) * 100).toFixed(1);
-            const isPCNF = lower.status.includes("PCNF");
+        // 과립 공정은 수율 계산 제외
+        if(selectedProc === "과립") {
+            container.innerHTML = `<div style="padding:20px; color:#888; text-align:center;">과립 공정은 수율 계산에서 제외됩니다.</div>`;
+            return;
+        }
+
+        const currentBatchRows = rawData.filter(row => row[4] === batchId);
+        
+        // 1. 모든 공정 데이터 정리
+        const steps = currentBatchRows.map(row => ({
+            proc: PROC_ORDER.find(p => row[5].includes(p)),
+            detail: row[5],
+            weight: parseFloat(row[6]),
+            status: (row[10] || "").toUpperCase()
+        })).filter(s => s.proc && !isNaN(s.weight));
+
+        // 2. 기준점인 '과립-Blender' 무게 찾기
+        const blenderStep = steps.find(s => s.detail.includes("과립-Blender"));
+        
+        // 3. 선택된 공정의 데이터 찾기
+        const targetStep = steps.find(s => s.proc === selectedProc);
+
+        if(targetStep && blenderStep) {
+            // 타정 공정일 경우 Blender 대비 수율 계산, 그 외는 직전 단계 대비(필요 시 blender 고정 가능)
+            // 요청 사항에 따라 타정 및 이후 공정의 이론량 기준을 Blender로 설정
+            const theoryWeight = blenderStep.weight;
+            const actualWeight = targetStep.weight;
+            const yieldVal = ((actualWeight / theoryWeight) * 100).toFixed(1);
+            const isPCNF = targetStep.status.includes("PCNF");
 
             container.innerHTML = `
                 <div class="result-box">
-                    <div class="yield-label">공정 구간 수율</div>
+                    <div class="yield-label">${selectedProc} 공정 수율 (Blender 기준)</div>
                     <div class="weight-info">
-                        ${upper.proc} 무게: <b>${upper.weight.toLocaleString()} Kg</b><br>
-                        ${lower.proc} 무게: <b>${lower.weight.toLocaleString()} Kg</b>
+                        • 이론량(과립-Blender): <b>${theoryWeight.toLocaleString()} Kg</b><br>
+                        • 실생산량(${selectedProc}): <b>${actualWeight.toLocaleString()} Kg</b>
                     </div>
                     <div class="yield-val">${yieldVal}%</div>
                     <span class="status-badge ${isPCNF ? 'status-alert' : 'status-normal'}">
@@ -172,11 +186,8 @@
                     </span>
                 </div>
             `;
-        } else {
-            container.innerHTML = `
-                <div style="padding:20px; color:#888; text-align:center; font-size:0.9rem;">
-                    첫 번째 공정(과립 등)은<br>상위 공정 데이터가 없으므로<br>수율 계산이 제외됩니다.
-                </div>`;
+        } else if (!blenderStep) {
+            container.innerHTML = `<div style="padding:20px; color:#e74c3c; text-align:center;">이론량 기준인 '과립-Blender' 데이터가 없습니다.</div>`;
         }
     }
 
