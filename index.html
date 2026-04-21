@@ -38,6 +38,13 @@
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxJoIbArdj4_BDnV6wxNgLd3k55kbagI1rIdqqBBW5WMb63lHFh3K-UWoPpBwbUeRXjt9B5ieNXa05/pub?gid=240982560&single=true&output=csv';
     let rawData = [];
     const PROC_ORDER = ["과립", "타정", "코팅", "선별", "인쇄"];
+    
+    // 이론량 추적을 위한 장비 리스트 정의
+    const THEO_MACHINES = {
+        "타정": ["KIK1", "KIK2", "KIK3", "KIK4", "KORSCH"],
+        "코팅": ["금성80", "금성130", "금성-170", "세종-130"],
+        "선별": ["자동", "수동"]
+    };
 
     function init() {
         Papa.parse(CSV_URL, {
@@ -80,7 +87,7 @@
             if(row[4] === batchId && row[5]) { 
                 const proc = PROC_ORDER.find(p => row[5].includes(p));
                 if(proc) {
-                    if(proc === "인쇄" && !prodName.includes("레바핀")) return; // 레바핀 아니면 인쇄 숨김
+                    if(proc === "인쇄" && !prodName.includes("레바핀")) return;
                     processes.push({ name: proc, weight: parseFloat(row[6]), detail: row[5], status: row[10] });
                 }
             }
@@ -108,15 +115,21 @@
         })).filter(s => s.proc && !isNaN(s.weight));
 
         let theoryStep, actualStep = steps.find(s => s.proc === selectedProc);
+        let theoryName = "";
 
         if (selectedProc === "타정") {
             theoryStep = steps.find(s => s.detail.includes("과립-Blender"));
+            theoryName = "과립-Blender";
         } else if (selectedProc === "코팅") {
-            theoryStep = steps.find(s => s.proc === "타정");
+            theoryStep = steps.find(s => THEO_MACHINES["타정"].some(m => s.detail.includes(m)));
+            theoryName = "타정 공정 (KIK/KORSCH)";
         } else if (selectedProc === "선별") {
-            theoryStep = steps.find(s => s.proc === "코팅") || steps.find(s => s.proc === "타정");
+            theoryStep = steps.find(s => THEO_MACHINES["코팅"].some(m => s.detail.includes(m))) || 
+                         steps.find(s => THEO_MACHINES["타정"].some(m => s.detail.includes(m)));
+            theoryName = theoryStep ? (theoryStep.proc === "코팅" ? "코팅 공정" : "타정 공정") : "상위 공정";
         } else if (selectedProc === "인쇄") {
-            theoryStep = steps.find(s => s.proc === "선별");
+            theoryStep = steps.find(s => THEO_MACHINES["선별"].some(m => s.detail.includes(m)));
+            theoryName = "선별 공정 (자동/수동)";
         }
 
         if(actualStep && theoryStep) {
@@ -125,8 +138,8 @@
                 <div class="result-box">
                     <div class="yield-label">${selectedProc} 수율 분석</div>
                     <div class="weight-info">
-                        • 이론량(${theoryStep.proc || theoryStep.detail}): <b>${theoryStep.weight.toLocaleString()} Kg</b><br>
-                        • 실생산량(${selectedProc}): <b>${actualStep.weight.toLocaleString()} Kg</b>
+                        • 이론량(${theoryName}): <b>${theoryStep.weight.toLocaleString()} Kg</b><br>
+                        • 실생산량(${actualStep.detail}): <b>${actualStep.weight.toLocaleString()} Kg</b>
                     </div>
                     <div class="yield-val">${yieldVal}%</div>
                     <span class="status-badge ${actualStep.status.includes("PCNF") ? 'status-alert' : 'status-normal'}">
@@ -134,7 +147,7 @@
                     </span>
                 </div>`;
         } else {
-            container.innerHTML = `<div style="padding:20px; color:#e74c3c; text-align:center;">상위 공정(${selectedProc === "타정" ? "과립-Blender" : "직전 공정"}) 데이터를 찾을 수 없습니다.</div>`;
+            container.innerHTML = `<div style="padding:20px; color:#e74c3c; text-align:center;">이론량 기준 데이터(${theoryName || "직전 공정"})를 찾을 수 없습니다.</div>`;
         }
     }
 
