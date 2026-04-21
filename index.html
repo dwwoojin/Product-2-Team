@@ -2,93 +2,183 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>생산2팀 배치별 생산성 현황</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>생산2팀 생산성 현황</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         body { font-family: 'Pretendard', sans-serif; padding: 20px; background: #f4f7f9; color: #2c3e50; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .status-container { display: flex; gap: 15px; margin-bottom: 20px; }
-        .box { flex: 1; padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .alert-active { border: 2px solid #e74c3c; color: #e74c3c; background: #fff5f5; animation: blink 2s infinite; }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        h1 { text-align: center; color: #34495e; margin-bottom: 30px; }
         
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        h2 { font-size: 1.1rem; border-left: 5px solid #3498db; padding-left: 12px; margin-bottom: 15px; }
+        /* 4단 레이아웃 스타일 */
+        .dashboard-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; height: 600px; }
+        .column { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e0e6ed; }
+        .column-header { background: #3498db; color: white; padding: 15px; font-weight: bold; text-align: center; font-size: 1.1rem; }
+        .list-container { flex: 1; overflow-y: auto; padding: 10px; }
         
-        .filter-container { background: #ebf2f7; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
-        .filter-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-        .filter-group { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 5px; }
-        label { font-size: 12px; font-weight: bold; color: #64748b; }
-        .filter-input, select { padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }
+        /* 리스트 아이템 스타일 */
+        .item { padding: 12px; margin-bottom: 8px; background: #fff; border: 1px solid #eee; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
+        .item:hover { background: #ebf5fb; border-color: #3498db; transform: translateX(5px); }
+        .item.active { background: #3498db; color: white; border-color: #2980b9; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 10px; }
-        th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: center; }
-        th { background: #f8f9fa; color: #7f8c8d; position: sticky; top: 0; }
-        .yield-badge { font-weight: bold; color: #2980b9; background: #eef7ff; padding: 5px 10px; border-radius: 6px; }
+        /* 수율 결과창 스타일 */
+        .result-box { padding: 15px; border-bottom: 1px solid #eee; background: #f8f9fa; }
+        .yield-val { font-size: 1.5rem; font-weight: bold; color: #2980b9; text-align: center; margin: 10px 0; }
+        .status-badge { display: block; text-align: center; padding: 5px; border-radius: 5px; font-weight: bold; font-size: 0.8rem; }
+        .status-normal { background: #2ecc71; color: white; }
+        .status-alert { background: #e74c3c; color: white; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>[생산2팀 배치별 생산성 현황]</h1>
-        <div id="update-time" style="font-size: 0.8rem; color: #95a5a6;"></div>
-    </div>
+    <h1>[생산2팀 생산성 현황]</h1>
 
-    <div class="status-container">
-        <div id="sys-status" class="box" style="border: 2px solid #2ecc71; color: #2ecc71;">시스템 상태: 정상 (CNF)</div>
-        <div id="pcnf-summary" class="box">PCNF 탐지: 0건</div>
-    </div>
-
-    <div class="card">
-        <h2>공정 수율 분석 및 필터</h2>
-        
-        <div class="filter-container">
-            <div class="filter-row">
-                <div class="filter-group">
-                    <label>제품명 검색 (D열)</label>
-                    <input type="text" id="filterProduct" class="filter-input" placeholder="제품명 입력..." onkeyup="filterTable()">
-                </div>
-                <div class="filter-group">
-                    <label>배치번호 검색 (E열)</label>
-                    <input type="text" id="filterBatch" class="filter-input" placeholder="배치번호 입력..." onkeyup="filterTable()">
-                </div>
-            </div>
-            <div class="filter-row">
-                <div class="filter-group">
-                    <label>공정 분류</label>
-                    <select id="mainCategory" onchange="updateSubCategory()">
-                        <option value="">전체 공정</option>
-                        <option value="과립">과립</option>
-                        <option value="타정">타정</option>
-                        <option value="코팅">코팅</option>
-                        <option value="선별">선별</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>세부 장비</label>
-                    <select id="subCategory" onchange="filterTable()">
-                        <option value="">공정을 먼저 선택하세요</option>
-                    </select>
-                </div>
-            </div>
+    <div class="dashboard-container">
+        <div class="column">
+            <div class="column-header">1. 제품 List</div>
+            <div id="productList" class="list-container"></div>
         </div>
 
-        <table id="yieldTable">
-            <thead>
-                <tr>
-                    <th>제품명</th>
-                    <th>배치번호</th>
-                    <th>공정분류</th>
-                    <th>세부장비</th>
-                    <th>이론량</th>
-                    <th>생산량</th>
-                    <th>수율 (%)</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="column">
+            <div class="column-header">2. 오더번호</div>
+            <div id="orderList" class="list-container"></div>
+        </div>
+
+        <div class="column">
+            <div class="column-header">3. 공정</div>
+            <div id="processList" class="list-container"></div>
+        </div>
+
+        <div class="column">
+            <div class="column-header">4. 수율</div>
+            <div id="yieldResult" class="list-container"></div>
+        </div>
     </div>
 
 <script>
-    const CSV_URL = '
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxJoIbArdj4_BDnV6wxNgLd3k55kbagI1rIdqqBBW5WMb63lHFh3K-UWoPpBwbUeRXjt9B5ieNXa05/pub?gid=240982560&single=true&output=csv';
+    
+    let rawData = [];
+    const PROC_ORDER = ["과립", "타정", "코팅", "선별", "인쇄"];
+
+    function init() {
+        Papa.parse(CSV_URL, {
+            download: true,
+            header: false,
+            complete: (results) => {
+                rawData = results.data.slice(1);
+                renderProducts();
+            }
+        });
+    }
+
+    // 1단계: 제품 리스트 출력
+    function renderProducts() {
+        const productSet = new Set();
+        rawData.forEach(row => { if(row[3]) productSet.add(row[3]); }); // D열 자재명 기준
+        
+        const container = document.getElementById('productList');
+        container.innerHTML = "";
+        Array.from(productSet).sort().forEach(prod => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.innerText = prod;
+            div.onclick = () => selectProduct(prod, div);
+            container.appendChild(div);
+        });
+    }
+
+    // 2단계: 제품 선택 -> 오더번호 리스트 출력
+    function selectProduct(prodName, element) {
+        setActive('productList', element);
+        const orderSet = new Set();
+        rawData.forEach(row => {
+            if(row[3] === prodName && row[1]) orderSet.add(row[1]); // B열 오더번호 기준
+        });
+
+        const container = document.getElementById('orderList');
+        container.innerHTML = "";
+        document.getElementById('processList').innerHTML = "";
+        document.getElementById('yieldResult').innerHTML = "";
+
+        Array.from(orderSet).sort().forEach(order => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.innerText = order;
+            div.onclick = () => selectOrder(order, div);
+            container.appendChild(div);
+        });
+    }
+
+    // 3단계: 오더번호 선택 -> 공정 리스트 출력
+    function selectOrder(orderId, element) {
+        setActive('orderList', element);
+        const processes = [];
+        rawData.forEach(row => {
+            if(row[1] === orderId && row[5]) { // F열 작업내역에서 공정 추출
+                const proc = PROC_ORDER.find(p => row[5].includes(p));
+                if(proc) processes.push({ name: proc, weight: parseFloat(row[8]), status: row[10] }); // I열 확정수율(Kg)
+            }
+        });
+
+        const container = document.getElementById('processList');
+        container.innerHTML = "";
+        document.getElementById('yieldResult').innerHTML = "";
+
+        // 중복 제거 및 공정 순서 정렬
+        const uniqueProcs = [...new Map(processes.map(item => [item.name, item])).values()]
+                            .sort((a, b) => PROC_ORDER.indexOf(a.name) - PROC_ORDER.indexOf(b.name));
+
+        uniqueProcs.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.innerText = p.name;
+            div.onclick = () => calculateYield(orderId, p.name, div);
+            container.appendChild(div);
+        });
+    }
+
+    // 4단계: 공정 선택 -> 수율 계산 및 출력
+    function calculateYield(orderId, selectedProc, element) {
+        setActive('processList', element);
+        
+        const currentOrderRows = rawData.filter(row => row[1] === orderId);
+        const steps = currentOrderRows.map(row => ({
+            proc: PROC_ORDER.find(p => row[5].includes(p)),
+            weight: parseFloat(row[8]),
+            status: (row[10] || "").toUpperCase()
+        })).filter(s => s.proc && !isNaN(s.weight))
+           .sort((a, b) => PROC_ORDER.indexOf(a.proc) - PROC_ORDER.indexOf(b.proc));
+
+        const targetIdx = steps.findIndex(s => s.proc === selectedProc);
+        const container = document.getElementById('yieldResult');
+        container.innerHTML = "";
+
+        if(targetIdx > 0) {
+            const upper = steps[targetIdx - 1];
+            const lower = steps[targetIdx];
+            const yieldVal = ((lower.weight / upper.weight) * 100).toFixed(1);
+            const hasPCNF = lower.status.includes("PCNF");
+
+            container.innerHTML = `
+                <div class="result-box">
+                    <div style="font-size:0.8rem; color:#888;">대상 구간</div>
+                    <div style="font-weight:bold;">${upper.proc} (${upper.weight}Kg) → ${lower.proc} (${lower.weight}Kg)</div>
+                    <div class="yield-val">${yieldVal}%</div>
+                    <span class="status-badge ${hasPCNF ? 'status-alert' : 'status-normal'}">
+                        ${hasPCNF ? '⚠️ PCNF 발생' : '✅ 정상(CNF)'}
+                    </span>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `<div style="padding:20px; color:#888;">첫 공정(상위 공정 없음)이거나 데이터가 부족하여 수율을 계산할 수 없습니다.</div>`;
+        }
+    }
+
+    function setActive(containerId, element) {
+        document.querySelectorAll(`#${containerId} .item`).forEach(i => i.classList.remove('active'));
+        element.classList.add('active');
+    }
+
+    init();
+</script>
+</body>
+</html>
